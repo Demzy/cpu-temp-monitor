@@ -13,16 +13,18 @@ from windows_toasts import Toast, WindowsToaster
 CHECK_INTERVAL = 3          # seconds between temperature checks
 TEMP_CRITICAL  = 85         # °C
 TEMP_WARNING   = 75         # °C
+TEMP_MILD_WARNING = 60       # °C
 LOG_FILE       = "temp_log.txt"
 
 #--- Gloal (cache heavy objects) ---
 FONT_PATH = "C:\\Windows\\Fonts\\arialbd.ttf"
 try:
-    font = ImageFont.truetype(FONT_PATH, 42)
+    font = ImageFont.truetype(FONT_PATH, 60)
 except:
     font = ImageFont.load_default()     #fallback if font not found
     
 TOASTER = WindowsToaster("CPU Temperature Monitor")
+
 
 def get_temperature():
     if platform.system() == "Windows":
@@ -34,14 +36,18 @@ def get_temperature():
         return [t.current for t in temps]
     else:
         return[]
+
+
         
 def get_status(celsius):
     if celsius > TEMP_CRITICAL:
-        return "🔥 CRITICAL!", (255, 60, 60)     # red
+        return "🔥 CRITICAL!", (255, 60, 60)        # red
     elif celsius > TEMP_WARNING:
-        return "⚠ WARNING", (255, 200, 0)       # yellow
+        return "🟠 WARNING", (255, 125, 0)           # Orange
+    elif celsius > TEMP_MILD_WARNING:
+        return "⚠ WARNING Above 60°C", (255, 200, 0)# yellow
     else:
-        return "✅ OK", (0, 200, 100)            # green
+        return "✅ OK", (0, 200, 100)               # green
         
 def make_tray_image(celsius, color):
     # creates a 64x64 image with temperature number as the icon
@@ -78,7 +84,7 @@ def monitor_loop(icon):
         timestamp = time.strftime("%H:%M:%S")
         
         if readings:
-            celsius = readings[0]
+            celsius = max(readings)
             status_text, color = get_status(celsius)
             
             # Update tray icon eith cureent temperature
@@ -155,4 +161,5 @@ def stop(icon):
         
 if __name__ == "__main__":
     main()
+
 
