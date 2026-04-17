@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+
+import psutil
+import wmi
+import time
+import platform
+import threading
+from PIL import Image, ImageDraw, ImageFont
+import pystray
+from windows_toasts import Toast, WindowsToaster
+
+# --- Configuration (Future config file will live here) ---
+CHECK_INTERVAL = 3          # seconds between temperature checks
+TEMP_CRITICAL  = 85         # °C
+TEMP_WARNING   = 75         # °C
+LOG_FILE       = "temp_log.txt"
+
+#--- Gloal (cache heavy objects) ---
+FONT_PATH = "C:\\Windows\\Fonts\\arialbd.ttf"
+try:
+    font = ImageFont.truetype(FONT_PATH, 42)
+except:
+    font = ImageFont.load_default()     #fallback if font not found
+    
+TOASTER = WindowsToaster("CPU Temperature Monitor")
+
+def get_temperature():
+    if platform.system() == "Windows":
+        w = wmi.WMI(namespace=r"root\wmi")
+        temps = w.MSAcpi_ThermalZoneTemperature()
+        return [(t.CurrentTemperature - 2732) / 10 for t in temps]
+    elif platform.system() == "Linux":
+        temps = psutil.sensors_temperatures().get("coretemp", [])
+        return [t.current for t in temps]
+    else:
+        return[]
+        
+def get_status(celsius):
+    if celsius > TEMP_CRITICAL:
+        return "🔥 CRITICAL!", (255, 60, 60)     # red
+    elif celsius > TEMP_WARNING:
+        return "⚠ WARNING", (255, 200, 0)       # yellow
+    else:
+        return "✅ OK", (0, 200, 100)            # green
+        
+def make_tray_image(celsius, color):
+    # creates a 64x64 image with temperature number as the icon
+    # PIL = Python Imaging Lirary, lest us draw pixels programmatically
+    img = Image.new("RGBA", (64,64), (0,0,0,0))     # Transparent background
+    draw = ImageDraw.Draw(img)
+    
+    # Draw colored circle backgrounddraw
+    # draw.ellipse([2,2,63,63], fill=color)
+    
+    # Draw temperature text centered on circle
+    text = str(int(celsius))
+    
+    # Load windows sytem font at readable size
+    
+    
+    # Default font - we'll upgrade to custom font in future
+    draw.text((32, 32), text, fill=color, anchor="mm", font=font)
+    
+    return img
+    
+def write_log(timestamp, celsius, status_text):
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] {celsius}°C {status_text}\n")
+        
+def monitor_loop(icon):
+    # This function runs in a seperate threading
+   
+    last_notification = 0       # prevents notification spam
+    
+
+    while True:
+        readings = get_temperature()
+        timestamp = time.strftime("%H:%M:%S")
+        
+        if readings:
+            celsius = readings[0]
+            status_text, color = get_status(celsius)
+            
+            # Update tray icon eith cureent temperature
+            icon.icon = make_tray_image(celsius, color)
+            icon.title =f"CPU Temp: {celsius}°C {status_text}"
+            
+            print(f"[{timestamp}] Temp: {celsius}°C {status_text}")
+            write_log(timestamp, celsius, status_text)
+            
+            # Only notify once per 60 seconds to avoid spam
+            current_time = time.time()
+            if celsius > TEMP_WARNING and (current_time - last_notification) > 60:
+                toast = Toast()
+                toast.text_fields = [
+                    f"🔥 CPU at {celsius}°C!",
+                    "Risk of crash - save your work NOW!"
+                ]
+                TOASTER.show_toast(toast)
+                last_notification = current_time
+                
+        time.sleep(CHECK_INTERVAL)
+            
+def main():
+    # Write session start marker
+    session_start = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding ="utf-8") as f:
+        f.write(f"\n{'='*40}\n")
+        f.write(f"SESSION STARTED: {session_start}\n")
+        f.write(f"{'='*40}\n")
+        
+
+    print("Temperature Monitor Started...")
+    print("Running ins system tray - right click icon to exit")
+    print("=" * 40)
+    
+    # create initial tray icon
+    initial_image = make_tray_image(0, (100, 100, 100))
+    
+    # Tray menue - right clicking icon shows these options
+    menu = pystray.Menu(
+        pystray.MenuItem("Open Log File", lambda: open_log()),
+        pystray.MenuItem("Exit", lambda icon, item: stop(icon))
+    )
+    
+    icon = pystray.Icon(
+        "cpu_temp",
+        initial_image,
+        "CPU Temperature Monitor",
+        menu
+    )
+    
+    # Start monitor in background threading
+    # daemon=True means thread dies automatically when main program exits
+    thread = threading.Thread(target=monitor_loop, args=(icon,), daemon=True)
+    thread.start()
+    
+    # Run tray icon (this locks unitl exist is clicked)
+    icon.run()
+    
+    # Write session end marker when exiting
+    session_end = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{'='*40}\n")
+        f.write(f"SESSION ENDED: {session_end}\n")
+        f.write(f"{'='*40}\n")
+    print("\nMonitor Stopped.")
+    
+def open_log():
+    import os
+    os.startfile(LOG_FILE)      # Opens log in default text editor
+        
+def stop(icon):
+    icon.stop()
+        
+if __name__ == "__main__":
+    main()
+
