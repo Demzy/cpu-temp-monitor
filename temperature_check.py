@@ -15,9 +15,12 @@ CHECK_INTERVAL = 3          # seconds between temperature checks
 TEMP_CRITICAL  = 85         # °C
 TEMP_WARNING   = 75         # °C
 TEMP_MILD_WARNING = 60       # °C
-LOG_FILE       = os.path.join(os.path.expanduser("~"), "Documents", "cpu_temp_log.txt")
 
-#--- Global (cache heavy objects) ---
+# --- Log Setup ---
+os.makedirs("logs", exist_ok=True)
+LOG_FILE       = "logs/temp_log.txt"
+
+# --- Global (cache heavy objects) ---
 FONT_PATH = "C:\\Windows\\Fonts\\arialbd.ttf"
 try:
     FONT = ImageFont.truetype(FONT_PATH, 55)
@@ -77,11 +80,12 @@ def write_log(timestamp, celsius, status_text):
 def monitor_loop(icon):
     # This function runs in a seperate threading
    
-    last_notification = 0       # prevents notification spam
-    
     if platform.system() == "Windows":
         thread_wmi = wmi.WMI(namespace=r"root\wmi")
+    else:
+        thread_wmi = None
     
+    last_notification = 0       # prevents notification spam
     log_counter = 0
     last_celsius = None
     
@@ -94,13 +98,18 @@ def monitor_loop(icon):
             celsius = max(readings)
             status_text, color = get_status(celsius)
             
-            # Update tray icon eith cureent temperature
+            # Only redraw icon if temperature actually changed
+            # Saves CPU cycles when temp is stable
             if celsius != last_celsius:
                 icon.icon = make_tray_image(celsius, color)
                 icon.title =f"CPU Temp: {celsius}°C {status_text}"
                 last_celsius = celsius
             
             print(f"[{timestamp}] Temp: {celsius}°C {status_text}")
+            
+            # log_counter increases every loop
+            # % 5 means only write when counter is divisible by 5
+            # So we log every 5th reading instead of every reading
             log_counter += 1 
             if log_counter % 5 == 0:
                 write_log(timestamp, celsius, status_text)
@@ -117,6 +126,13 @@ def monitor_loop(icon):
                 last_notification = current_time
                 
         time.sleep(CHECK_INTERVAL)
+        
+def open_log():
+    import os
+    os.startfile(LOG_FILE)      # Opens log in default text editor
+        
+def stop(icon):
+    icon.stop()
             
 def main():
     # Write session start marker
@@ -163,12 +179,6 @@ def main():
         f.write(f"{'='*40}\n")
     print("\nMonitor Stopped.")
     
-def open_log():
-    import os
-    os.startfile(LOG_FILE)      # Opens log in default text editor
-        
-def stop(icon):
-    icon.stop()
         
 if __name__ == "__main__":
     main()
