@@ -17,8 +17,16 @@ TEMP_WARNING   = 75         # °C
 TEMP_MILD_WARNING = 60       # °C
 
 # --- Log Setup ---
-os.makedirs("logs", exist_ok=True)
-LOG_FILE       = "logs/temp_log.txt"
+# Get the folder where the script lives
+# __file__ is a Python built-in that means "path to this script"
+# os.path.dirname gets the folder containing that file
+# os.path.abspath converts it to a full absolute path
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+
+# Join script folder + logs folder + filename
+# os.path.join is the correct way to build paths - works on Windows AND Linux
+os.makedirs(os.path.join(SCRIPT_DIR, "logs"), exist_ok=True)
+LOG_FILE = os.path.join(SCRIPT_DIR, "logs", "temp_log.txt")
 
 # --- Global (cache heavy objects) ---
 FONT_PATH = "C:\\Windows\\Fonts\\arialbd.ttf"
@@ -128,8 +136,11 @@ def monitor_loop(icon):
         time.sleep(CHECK_INTERVAL)
         
 def open_log():
-    import os
-    os.startfile(LOG_FILE)      # Opens log in default text editor
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write("No temperature readings yet.\n")
+    # LOG_FILE is now absolute path so startfile always finds it
+    os.startfile(LOG_FILE)    # Opens log in default text editor
         
 def stop(icon):
     icon.stop()
