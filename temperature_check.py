@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import psutil
 import wmi
 import time
@@ -14,22 +15,22 @@ CHECK_INTERVAL = 3          # seconds between temperature checks
 TEMP_CRITICAL  = 85         # °C
 TEMP_WARNING   = 75         # °C
 TEMP_MILD_WARNING = 60       # °C
-LOG_FILE       = "temp_log.txt"
+LOG_FILE       = os.path.join(os.path.expanduser("~"), "Documents", "cpu_temp_log.txt")
 
-#--- Gloal (cache heavy objects) ---
+#--- Global (cache heavy objects) ---
 FONT_PATH = "C:\\Windows\\Fonts\\arialbd.ttf"
 try:
-    font = ImageFont.truetype(FONT_PATH, 60)
+    FONT = ImageFont.truetype(FONT_PATH, 55)
 except:
-    font = ImageFont.load_default()     #fallback if font not found
+    FONT = ImageFont.load_default()     #fallback if font not found
     
 TOASTER = WindowsToaster("CPU Temperature Monitor")
 
 
-def get_temperature():
+
+def get_temperature(wmi_conn=None):
     if platform.system() == "Windows":
-        w = wmi.WMI(namespace=r"root\wmi")
-        temps = w.MSAcpi_ThermalZoneTemperature()
+        temps = wmi_conn.MSAcpi_ThermalZoneTemperature()
         return [(t.CurrentTemperature - 2732) / 10 for t in temps]
     elif platform.system() == "Linux":
         temps = psutil.sensors_temperatures().get("coretemp", [])
@@ -65,7 +66,7 @@ def make_tray_image(celsius, color):
     
     
     # Default font - we'll upgrade to custom font in future
-    draw.text((32, 32), text, fill=color, anchor="mm", font=font)
+    draw.text((32, 32), text, fill=color, anchor="mm", font=FONT)
     
     return img
     
@@ -78,9 +79,15 @@ def monitor_loop(icon):
    
     last_notification = 0       # prevents notification spam
     
+    if platform.system() == "Windows":
+        thread_wmi = wmi.WMI(namespace=r"root\wmi")
+    
+    log_counter = 0
+    last_celsius = None
+    
 
     while True:
-        readings = get_temperature()
+        readings = get_temperature(thread_wmi)
         timestamp = time.strftime("%H:%M:%S")
         
         if readings:
@@ -88,11 +95,15 @@ def monitor_loop(icon):
             status_text, color = get_status(celsius)
             
             # Update tray icon eith cureent temperature
-            icon.icon = make_tray_image(celsius, color)
-            icon.title =f"CPU Temp: {celsius}°C {status_text}"
+            if celsius != last_celsius:
+                icon.icon = make_tray_image(celsius, color)
+                icon.title =f"CPU Temp: {celsius}°C {status_text}"
+                last_celsius = celsius
             
             print(f"[{timestamp}] Temp: {celsius}°C {status_text}")
-            write_log(timestamp, celsius, status_text)
+            log_counter += 1 
+            if log_counter % 5 == 0:
+                write_log(timestamp, celsius, status_text)
             
             # Only notify once per 60 seconds to avoid spam
             current_time = time.time()
